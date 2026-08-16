@@ -117,6 +117,19 @@ make openocd-debug-stop
 
 生成的 OpenOCD 配置在 `build/wch/<CHIP>.openocd.cfg`（仅调试不烧录）。
 
+### step5. 烧录
+
+`add_wch_flash_target()` 为 elf 生成"WCH-Link 烧录"的 make target（与 MRS2 IDE 内部烧录方式一致：
+OpenOCD 官方 `wch-riscv.cfg` + `program` 命令）：
+
+```bash
+make flash
+```
+
+该命令先构建 elf 并生成 hex，再连接 WCH probe，执行 **program + verify + reset**
+（烧录 → 校验 → 复位运行），烧录完成自动退出。OpenOCD 路径来自环境变量
+`WCH_OPENOCD_ROOT`（step1）。前置：elf 需先调用 `wch_generate_hex()` 生成 hex。
+
 ## 对外接口
 
 | 接口 | 说明 |
@@ -124,6 +137,7 @@ make openocd-debug-stop
 | `target_link_wch_startup(<target> [CHIP])` | 注入启动文件 + 链接脚本（+ 必要的 -nostartfiles） |
 | `wch_generate_hex(<target> [CHIP])` | 生成 hex 并打印各段大小 |
 | `add_wch_debug_target(<exec> <target> [CHIP])` | 创建"连接设备 + 启动 OpenOCD GDB server"的 make target，并配套生成 `${target}-stop`（终止残留 openocd 释放 probe） |
+| `add_wch_flash_target(<exec> <target>)` | 创建"WCH-Link 烧录（program + verify + reset）"的 make target |
 
 ## 支持芯片
 

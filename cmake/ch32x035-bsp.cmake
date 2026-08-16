@@ -30,7 +30,6 @@ endfunction()
 # @param chip   可选，芯片型号（打印芯片总 Flash/RAM 容量）
 ####################################################################################################
 function(target_link_wch_startup target)
-    # ---- 链接脚本生成 --------------------------
     set(_bsp "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/..")
     set(_chip_params
         FLASH_ORIGIN 0x00000000 FLASH_LENGTH 62K
@@ -58,7 +57,6 @@ function(target_link_wch_startup target)
     configure_file("${_bsp}/cmake/wch_link.ld.in" "${_ld}" @ONLY)
     message(STATUS "WCH: generated ${_ld} for ${_chip}")
 
-    # ---- 启动脚本 ------------------------------
     set(_startup "${STARTUP}")
     target_sources(${target} PRIVATE
         ${_startup}
@@ -105,6 +103,24 @@ function(wch_generate_hex target)
     add_custom_target(${_hex_target} ALL DEPENDS "${_hex}")
 endfunction()
 
+function(_wch_find_openocd)
+    if(NOT DEFINED ENV{WCH_OPENOCD_ROOT} OR "$ENV{WCH_OPENOCD_ROOT}" STREQUAL "")
+        message(FATAL_ERROR
+            "env WCH_OPENOCD_ROOT is not set.\n"
+            "  Set it to the OpenOCD install root, e.g.\n"
+            "    set WCH_OPENOCD_ROOT=<MRS2>/WCH/OpenOCD/OpenOCD  (contains bin/openocd.exe)")
+    endif()
+    if(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe")
+        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe" PARENT_SCOPE)
+    elseif(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd")
+        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd" PARENT_SCOPE)
+    else()
+        message(FATAL_ERROR
+            "no openocd[.exe] under '$ENV{WCH_OPENOCD_ROOT}/bin'.\n"
+            "  Check WCH_OPENOCD_ROOT.")
+    endif()
+endfunction()
+
 ####################################################################################################
 # @name add_wch_debug_target
 # @brief 为 elf target 创建"连接设备并启动 OpenOCD GDB server"的 make target
@@ -126,7 +142,6 @@ endfunction()
 function(add_wch_debug_target exec target)
     cmake_parse_arguments(ARG "" "CHIP" "" ${ARGN})
 
-    # ---- 芯片解析 ------------------------------
     if(ARG_CHIP)
         set(_chip ${ARG_CHIP})
     else()
@@ -140,34 +155,15 @@ function(add_wch_debug_target exec target)
         endif()
     endif()
 
-    # ---- OpenOCD 定位 --------------------------
-    # 仅支持环境变量 WCH_OPENOCD_ROOT 指向 OpenOCD 安装根目录
-    # (要求其 bin/ 下有 openocd.exe / openocd), 未设置直接报错
-    if(NOT DEFINED ENV{WCH_OPENOCD_ROOT} OR "$ENV{WCH_OPENOCD_ROOT}" STREQUAL "")
-        message(FATAL_ERROR
-            "add_wch_debug_target: env WCH_OPENOCD_ROOT is not set.\n"
-            "  Set it to the OpenOCD install root, e.g.\n"
-            "    set WCH_OPENOCD_ROOT=<MRS2>/WCH/OpenOCD/OpenOCD  (contains bin/openocd.exe)")
-    endif()
-    if(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe")
-        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe")
-    elseif(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd")
-        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd")
-    else()
-        message(FATAL_ERROR
-            "add_wch_debug_target: no openocd[.exe] under '$ENV{WCH_OPENOCD_ROOT}/bin'.\n"
-            "  Check WCH_OPENOCD_ROOT.")
-    endif()
+    _wch_find_openocd()
 
-    # ---- 生成 OpenOCD 配置 ---------------------
     set(WCH_OPENOCD_GDB_PORT 3333 CACHE STRING "GDB server port used by add_wch_debug_target()")
     set(WCH_OPENOCD_SPEED 6000 CACHE STRING "OpenOCD adapter clock in kHz")
-    set(WCH_CHIP ${_chip})   # 供 configure_file 模板 @WCH_CHIP@ 替换
+    set(WCH_CHIP ${_chip})
     set(_bsp "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/..")
     set(_cfg "${CMAKE_BINARY_DIR}/wch/${_chip}.openocd.cfg")
     configure_file("${_bsp}/cmake/wch_openocd.cfg.in" "${_cfg}" @ONLY)
 
-    # ---- make target ---------------------------
     add_custom_target(${target}
         COMMAND ${CMAKE_COMMAND} -E echo
             "============================================================"
@@ -181,17 +177,12 @@ function(add_wch_debug_target exec target)
             " stop with: make ${target}-stop  (Ctrl+C unreliable on Windows)"
         COMMAND ${CMAKE_COMMAND} -E echo
             "============================================================"
-        # gdb_port 必须先于 cfg 中的 init 执行, 故放在 -f 之前
         COMMAND ${_openocd} -c "gdb_port ${WCH_OPENOCD_GDB_PORT}" -f "${_cfg}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         VERBATIM
         USES_TERMINAL)
     add_dependencies(${target} ${exec})
 
-    # ---- stop target(兜底清理) ----------------
-    # Windows 下 mingw32-make 的 console handler 会消费 Ctrl+C 事件而不传给子进程,
-    # 导致 OpenOCD 残留并继续占用 probe, 故提供显式停止 target。
-    # 注意: taskkill /F /IM 会终止本机所有 openocd.exe 实例。
     if(CMAKE_HOST_WIN32)
         add_custom_target(${target}-stop
             COMMAND ${CMAKE_COMMAND} -E echo
@@ -205,4 +196,46 @@ function(add_wch_debug_target exec target)
             COMMAND sh -c "pkill -f '${_cfg}' || true"
             VERBATIM)
     endif()
+endfunction()
+
+####################################################################################################
+# @name add_wch_flash_target
+# @brief 为 elf target 创建"WCH-Link 烧录"的 make target
+#
+#        执行 `make <target>` 会:先构建 elf 并生成 hex → 连接 WCH probe →
+#        OpenOCD 官方 wch-riscv.cfg(含 wch_riscv flash bank)program + verify + reset。
+#        与 MRS2 IDE 内部烧录方式一致。
+#
+# @param exec   可执行 target 名(如 my_app.elf, 需已调用 wch_generate_hex)
+# @param target 生成的 make target 名(如 flash)
+#
+# 依赖环境变量:
+#   WCH_OPENOCD_ROOT  OpenOCD 安装根目录(含 bin/openocd[.exe] 与 bin/wch-riscv.cfg)
+####################################################################################################
+function(add_wch_flash_target exec target)
+    if(NOT TARGET ${exec}_hex)
+        message(FATAL_ERROR
+            "add_wch_flash_target: ${exec}_hex target not found.\n"
+            "  Call wch_generate_hex(${exec}) first to produce the .hex file.")
+    endif()
+
+    _wch_find_openocd()
+    get_filename_component(_openocd_dir "${_openocd}" DIRECTORY)
+    set(_cfg "${_openocd_dir}/wch-riscv.cfg")
+    set(_hex "${CMAKE_BINARY_DIR}/${exec}.hex")
+
+    add_custom_target(${target}
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "============================================================"
+        COMMAND ${CMAKE_COMMAND} -E echo " WCH-Link flash (program + verify + reset)"
+        COMMAND ${CMAKE_COMMAND} -E echo "   openocd : ${_openocd}"
+        COMMAND ${CMAKE_COMMAND} -E echo "   config  : ${_cfg}"
+        COMMAND ${CMAKE_COMMAND} -E echo "   hex     : ${_hex}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "============================================================"
+        COMMAND ${_openocd} -f "${_cfg}" -c "program ${_hex} verify reset exit"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        VERBATIM
+        USES_TERMINAL)
+    add_dependencies(${target} ${exec}_hex)
 endfunction()
