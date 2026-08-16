@@ -1,0 +1,27 @@
+WCH (Nanjing Qinheng Microelectronics) Standard Library License
+================================================================
+
+本文件收录本仓库内 WCH 官方标准库源码的原始许可声明。
+以下文件/目录遵循此许可，**不**适用于本仓库的 GPLv3 许可：
+
+  - inc/             （ch32x035.h、ch32x035_*.h、PIOC_SFR.h、core_riscv.h、debug.h、system_ch32x035.h）
+  - src/cpu/         （startup_ch32x035.S、system_ch32x035.c、core_riscv.c）
+  - src/peri/        （ch32x035_*.c 外设驱动）
+  - src/debug/       （debug.c）
+  - references/USB/  （ch32x035_usbfs_device.c/h，示例私有代码，仅参考不参与编译）
+
+原始许可声明（保留在每个源文件头部）：
+
+/********************************** (C) COPYRIGHT  *******************************
+ * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
+ * Attention: This software (modified or not) and binary are used for
+ * microcontroller manufactured by Nanjing Qinheng Microelectronics.
+ *******************************************************************************/
+
+译文/要点：
+  - 版权归南京沁恒微电子股份有限公司所有；
+  - 允许对软件进行修改或原样使用、允许以二进制形式使用；
+  - 用途限定：仅可用于南京沁恒微电子制造的微控制器。
+
+本仓库其余内容（CMake 构建系统、封装接口、示例代码、文档）为原创，
+以仓库根目录 LICENSE 中的 GNU GPLv3 许可发布。
