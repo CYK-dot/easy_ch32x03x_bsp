@@ -7,13 +7,18 @@ CH32X035 系列（CH32X035）的 CMake BSP 基座，以子目录形式被应用�
 
 ```
 ch32x035-bsp/
-├── CMakeLists.txt                 # 静态库 libwch_periph.a + 接口注入
-├── inc/                           # 0层头文件（ch32x035.h / ch32x035_*.h / PIOC_SFR.h / core_riscv.h / debug.h / system_ch32x035.h）
+├── CMakeLists.txt                 # 静态库 libwch_periph.a
+├── inc/                           # 0层头文件
 ├── src/
-│   ├── cpu/                       # 内核适配（startup_ch32x035.S / system_ch32x035.c / core_riscv.c）
-│   ├── peri/                      # 外设驱动（ch32x035_*.c）
-│   └── debug/                     # 调试实现（debug.c）
-├── references/USB/                # 示例私有 USB 驱动（ch32x035_usbfs_device.c/h，仅参考不参与编译）
+│   ├── cpu/
+│   │   ├── rv32imacxw/            # RISC-V 内核支撑
+│   │   └── chrisc8b/              # PIOC/eMCU 微核支撑
+│   └── peri/                      # 外设驱动
+├── references/
+│   ├── USB/                       # 示例私有 USB 驱动
+│   ├── debug/                     # UART Printf/Delay 调试参考
+│   └── pioc/                      # PIOC 参考
+├── tools/pioc/                    # PIOC 交叉编译工具
 └── cmake/
     ├── ch32x035-bsp.cmake         # 对外cmake接口实现
     ├── toolchain-riscv-wch.cmake  # 交叉工具链声明，外部无需感知
@@ -40,12 +45,17 @@ project(my_app C ASM)
 add_subdirectory(ch32x035-bsp)
 
 add_executable(my_app.elf src/main.c)
-target_link_libraries(my_app.elf PRIVATE wch_periph)   # 链接bsp库
-target_link_wch_startup(my_app.elf CH32X035)           # 注入启动文件 + 链接脚本
+target_link_libraries(my_app.elf PRIVATE wch_periph)   # 链接外设驱动静态库
+target_link_wch_startup(my_app.elf CH32X035)           # 注入 CPU 三件套(启动汇编/system/core) + 链接脚本
 wch_generate_hex(my_app.elf CH32X035)                  # 生成 hex + 打印各段大小
 ```
 
-多段分散加载场景：链接 `wch_periph` 静态库即可（不注入启动/链接脚本）。
+**职责划分**：`wch_periph` 静态库只含外设驱动（`src/peri/*.c`）；CPU 启动/系统初始化代码
+（`startup_ch32x035.S`、`system_ch32x035.c`、`core_riscv.c`）由 `target_link_wch_startup()`
+编译进目标可执行文件——外设驱动对 `SystemCoreClock`/`NVIC_*` 等符号的引用在链接期由该目标解析。
+
+多段分散加载场景：链接 `wch_periph` 静态库即可（不调用 `target_link_wch_startup`，
+不注入启动/链接脚本），CPU 启动代码由引导程序（bootloader）或其他加载段自行提供。
 
 ### step3. 构建
 
@@ -74,7 +84,10 @@ cmake --build build
 - 链接脚本 / 启动文件：应用工程根目录放自己的 `Link.ld` / `startup.S`，自动优先
 - 时钟频率：`system_ch32x035.c` 中 `SYSCLK_FREQ_48MHz_HSI` 等宏，改 BSP 源码或应用侧覆盖
 - `ch32x035_conf.h` / `ch32x035_it.h` 覆盖（include 路径顺序：应用 `src/` 优先于 BSP `inc/`）
-- PIOC 协处理器：`PIOC_SFR.h` 已含于 `inc/`，应用直接 `#include "PIOC_SFR.h"` 操作寄存器，无需额外 CMake 配置
+- PIOC 协处理器：`PIOC_SFR.h` 已含于 `inc/`，应用直接 `#include "PIOC_SFR.h"` 操作寄存器，无需额外 CMake 配置；
+  编写 PIOC 汇编与加载/通信代码前，先读 `references/pioc/Manual/CHRISC8B.PDF`（指令集）与
+  `references/pioc/Manual/PIOC.PDF`（SFR 手册），参考 `references/pioc/examples/` 下的完整示例
+  （1_Wire/RGB1W、PIOC_IIC：.ASM 源 + 官方 main.c 加载序列）
 - 库优化等级：configure 时 `-DWCH_PERIPH_OPT=-Os` 可覆盖 `wch_periph` 库编译优化等级（默认 `-Os`，对齐官方示例构建）
 
 ## License
