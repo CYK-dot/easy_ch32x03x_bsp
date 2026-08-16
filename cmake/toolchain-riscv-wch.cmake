@@ -1,8 +1,6 @@
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR riscv)
 
-## 构建环境检查 -------------------------------------------------------------------------------------
-
 if(DEFINED ENV{WCH_TOOLCHAIN_ROOT} AND NOT "$ENV{WCH_TOOLCHAIN_ROOT}" STREQUAL "")
     set(WCH_TOOLCHAIN_ROOT "$ENV{WCH_TOOLCHAIN_ROOT}"
         CACHE PATH "WCH RISC-V toolchain root directory (contains bin/)" FORCE)
@@ -24,14 +22,12 @@ if(NOT EXISTS "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}gcc.exe")
         "  Check WCH_TOOLCHAIN_ROOT / WCH_TOOLCHAIN_PREFIX.")
 endif()
 
-## 工具链配置 ---------------------------------------------------------------------------------------
 set(CMAKE_C_COMPILER   "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}gcc.exe")
 set(CMAKE_ASM_COMPILER "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}gcc.exe")
 set(CMAKE_OBJCOPY      "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}objcopy.exe")
 set(CMAKE_OBJDUMP      "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}objdump.exe")
 set(CMAKE_SIZE         "${WCH_BIN}/${WCH_TOOLCHAIN_PREFIX}size.exe")
 
-## 交叉编译配置 -------------------------------------------------------------------------------------
 set(WCH_ARCH "rv32imacxw")
 set(WCH_ABI "ilp32")
 
