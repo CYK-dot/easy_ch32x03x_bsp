@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug DAP Bootloader (OpenOCD)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/boot_app/bootloader/dap_bootloader.elf",
+            "servertype": "openocd",
+            "openOCDPath": "C:/01_Tools/MounRiverStudio/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
+            "configFiles": [
+                ".vscode/openocd_ch32x035.cfg"
+            ],
+            "gdbPath": "C:/01_Tools/riscv32-wch-elf-gcc/bin/riscv32-wch-elf-gdb.exe",
+            "svdFile": "C:/01_Tools/MounRiverStudio/MounRiver_Studio2/resources/app/resources/win32/components/WCH/SDK/default/RISC-V/CH32X035/NoneOS/CH32X035xx.svd",
+            "targetProcessor": 0,
+            "loadFiles": [],
+            "runToEntryPoint": "bootloader_main",
+            "showDevDebugOutput": "raw"
+        }
+    ]
+}

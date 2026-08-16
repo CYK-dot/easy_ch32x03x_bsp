@@ -1,0 +1,39 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake -B build -G \"MinGW Makefiles\" && cmake --build build -j4",
+            "options": {
+                "cwd": "${workspaceRoot}",
+                "shell": {
+                    "executable": "cmd",
+                    "args": ["/d", "/c"]
+                }
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "if exist build rmdir /s /q build",
+            "options": {
+                "cwd": "${workspaceRoot}",
+                "shell": {
+                    "executable": "cmd",
+                    "args": ["/d", "/c"]
+                }
+            },
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

@@ -32,6 +32,10 @@ ch32x035-bsp/
 工具链路径设置到环境变量 `WCH_TOOLCHAIN_ROOT`（**必填**，未设置时 configure 直接报错）。
 示例：`C:/01_Tools/riscv32-wch-elf-gcc`（GCC15）。
 
+调试（`add_wch_debug_target()`）还需 `WCH_OPENOCD_ROOT` 指向 OpenOCD 安装根目录
+（**必填**，含 `bin/openocd[.exe]`，未设置时 configure 直接报错）。
+示例：`C:/01_Tools/MounRiverStudio/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD`。
+
 ### step2. 在项目中引用BSP库
 
 单 elf、无 bootloader 场景，使用默认链接脚本与启动汇编：
@@ -48,6 +52,7 @@ add_executable(my_app.elf src/main.c)
 target_link_libraries(my_app.elf PRIVATE wch_periph)   # 链接外设驱动静态库
 target_link_wch_startup(my_app.elf CH32X035)           # 注入 CPU 三件套(启动汇编/system/core) + 链接脚本
 wch_generate_hex(my_app.elf CH32X035)                  # 生成 hex + 打印各段大小
+add_wch_debug_target(my_app.elf openocd-debug)         # make openocd-debug 启动 OpenOCD GDB server
 ```
 
 **职责划分**：`wch_periph` 静态库只含外设驱动（`src/peri/*.c`）；CPU 启动/系统初始化代码
@@ -66,12 +71,59 @@ cmake --build build
 
 产物：`build/my_app.elf`、`build/my_app.hex`、`build/my_app.map`，并打印各段大小报告。
 
+### step4. 调试（可选）
+
+`add_wch_debug_target()` 会为 elf 生成一个"连接设备并启动 OpenOCD GDB server"的 make target：
+
+```bash
+make openocd-debug
+```
+
+该命令先构建 elf，再连接 WCH probe（WCH-Link / WCH-LinkE / WCH-LinkW，RISC-V 模式）并
+前台启动 OpenOCD（GDB server 默认端口 **3333**）。OpenOCD 路径来自环境变量
+`WCH_OPENOCD_ROOT`（step1，未设置时 configure 直接报错），前端由开发者自选，例如
+VSCode **Cortex-Debug** 以 external/attach 模式连接：
+
+```json
+{
+    "type": "cortex-debug",
+    "request": "attach",
+    "servertype": "external",
+    "gdbTarget": "localhost:3333",
+    "executable": "${workspaceRoot}/build/my_app.elf",
+    "gdbPath": "C:/01_Tools/riscv32-wch-elf-gcc/bin/riscv32-wch-elf-gdb.exe",
+    "svdFile": "<MRS2>/WCH/SDK/default/RISC-V/CH32X035/NoneOS/CH32X035xx.svd",
+    "targetProcessor": 0
+}
+```
+
+**停止**：`Ctrl+C` **无法可靠终止 OpenOCD**（进程可能残留并继续占用 probe）。请用配套的 stop target：
+
+```bash
+make openocd-debug-stop
+```
+
+`add_wch_debug_target()` 为每个 debug target 生成配套的 `${target}-stop`（本示例即
+`openocd-debug-stop`），终止本机 openocd 进程并释放 probe（Windows 下为
+`taskkill /F /IM openocd.exe`，会终止本机所有 openocd 实例；幂等，无残留时不报错）。
+若 `make openocd-debug` 报端口 3333 被占或设备被占，先执行 stop target 再重试。
+
+可配置缓存变量（`cmake -D<NAME>=<value>` 覆盖）：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `WCH_OPENOCD_GDB_PORT` | 3333 | GDB server 端口（前端 `gdbTarget` 需一致） |
+| `WCH_OPENOCD_SPEED` | 6000 | adapter 时钟 kHz |
+
+生成的 OpenOCD 配置在 `build/wch/<CHIP>.openocd.cfg`（仅调试不烧录）。
+
 ## 对外接口
 
 | 接口 | 说明 |
 |---|---|
 | `target_link_wch_startup(<target> [CHIP])` | 注入启动文件 + 链接脚本（+ 必要的 -nostartfiles） |
 | `wch_generate_hex(<target> [CHIP])` | 生成 hex 并打印各段大小 |
+| `add_wch_debug_target(<exec> <target> [CHIP])` | 创建"连接设备 + 启动 OpenOCD GDB server"的 make target，并配套生成 `${target}-stop`（终止残留 openocd 释放 probe） |
 
 ## 支持芯片
 

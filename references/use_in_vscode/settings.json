@@ -1,0 +1,4 @@
+{
+    "cortex-debug.openocdPath.windows": "C:/01_Tools/MounRiverStudio/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
+    "cortex-debug.gdbPath.windows": "C:/01_Tools/riscv32-wch-elf-gcc/bin/riscv32-wch-elf-gdb.exe"
+}

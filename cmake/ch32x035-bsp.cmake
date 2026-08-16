@@ -104,3 +104,105 @@ function(wch_generate_hex target)
         VERBATIM)
     add_custom_target(${_hex_target} ALL DEPENDS "${_hex}")
 endfunction()
+
+####################################################################################################
+# @name add_wch_debug_target
+# @brief 为 elf target 创建"连接设备并启动 OpenOCD GDB server"的 make target
+#
+#        执行 `make <target>` 会:先构建 elf → 连接 WCH probe → 前台启动 OpenOCD(GDB server)。
+#        前端由开发者自选(如 VSCode cortex-debug 以 external/attach 模式连 localhost:<port>)。
+#
+# @param exec   可执行 target 名(如 my_app.elf)
+# @param target 生成的 make target 名(如 openocd-debug)
+# @option CHIP  芯片型号(默认:查 exec 的 WCH_CHIP 属性 → WCH_DEFAULT_CHIP → CH32X035)
+#
+# 依赖环境变量:
+#   WCH_OPENOCD_ROOT  OpenOCD 安装根目录(含 bin/openocd[.exe]), 未设置直接报错
+#
+# 相关缓存变量(configure 时 -D 覆盖):
+#   WCH_OPENOCD_GDB_PORT   GDB server 端口(默认 3333)
+#   WCH_OPENOCD_SPEED      adapter 时钟 kHz(默认 6000)
+####################################################################################################
+function(add_wch_debug_target exec target)
+    cmake_parse_arguments(ARG "" "CHIP" "" ${ARGN})
+
+    # ---- 芯片解析 ------------------------------
+    if(ARG_CHIP)
+        set(_chip ${ARG_CHIP})
+    else()
+        get_target_property(_prop ${exec} WCH_CHIP)
+        if(_prop)
+            set(_chip ${_prop})
+        elseif(DEFINED WCH_DEFAULT_CHIP)
+            set(_chip ${WCH_DEFAULT_CHIP})
+        else()
+            set(_chip CH32X035)
+        endif()
+    endif()
+
+    # ---- OpenOCD 定位 --------------------------
+    # 仅支持环境变量 WCH_OPENOCD_ROOT 指向 OpenOCD 安装根目录
+    # (要求其 bin/ 下有 openocd.exe / openocd), 未设置直接报错
+    if(NOT DEFINED ENV{WCH_OPENOCD_ROOT} OR "$ENV{WCH_OPENOCD_ROOT}" STREQUAL "")
+        message(FATAL_ERROR
+            "add_wch_debug_target: env WCH_OPENOCD_ROOT is not set.\n"
+            "  Set it to the OpenOCD install root, e.g.\n"
+            "    set WCH_OPENOCD_ROOT=<MRS2>/WCH/OpenOCD/OpenOCD  (contains bin/openocd.exe)")
+    endif()
+    if(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe")
+        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd.exe")
+    elseif(EXISTS "$ENV{WCH_OPENOCD_ROOT}/bin/openocd")
+        set(_openocd "$ENV{WCH_OPENOCD_ROOT}/bin/openocd")
+    else()
+        message(FATAL_ERROR
+            "add_wch_debug_target: no openocd[.exe] under '$ENV{WCH_OPENOCD_ROOT}/bin'.\n"
+            "  Check WCH_OPENOCD_ROOT.")
+    endif()
+
+    # ---- 生成 OpenOCD 配置 ---------------------
+    set(WCH_OPENOCD_GDB_PORT 3333 CACHE STRING "GDB server port used by add_wch_debug_target()")
+    set(WCH_OPENOCD_SPEED 6000 CACHE STRING "OpenOCD adapter clock in kHz")
+    set(WCH_CHIP ${_chip})   # 供 configure_file 模板 @WCH_CHIP@ 替换
+    set(_bsp "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/..")
+    set(_cfg "${CMAKE_BINARY_DIR}/wch/${_chip}.openocd.cfg")
+    configure_file("${_bsp}/cmake/wch_openocd.cfg.in" "${_cfg}" @ONLY)
+
+    # ---- make target ---------------------------
+    add_custom_target(${target}
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "============================================================"
+        COMMAND ${CMAKE_COMMAND} -E echo " WCH OpenOCD GDB server"
+        COMMAND ${CMAKE_COMMAND} -E echo "   openocd : ${_openocd}"
+        COMMAND ${CMAKE_COMMAND} -E echo "   config  : ${_cfg}"
+        COMMAND ${CMAKE_COMMAND} -E echo "   elf     : $<TARGET_FILE:${exec}>"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "   gdb     : target remote localhost:${WCH_OPENOCD_GDB_PORT}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            " stop with: make ${target}-stop  (Ctrl+C unreliable on Windows)"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "============================================================"
+        # gdb_port 必须先于 cfg 中的 init 执行, 故放在 -f 之前
+        COMMAND ${_openocd} -c "gdb_port ${WCH_OPENOCD_GDB_PORT}" -f "${_cfg}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        VERBATIM
+        USES_TERMINAL)
+    add_dependencies(${target} ${exec})
+
+    # ---- stop target(兜底清理) ----------------
+    # Windows 下 mingw32-make 的 console handler 会消费 Ctrl+C 事件而不传给子进程,
+    # 导致 OpenOCD 残留并继续占用 probe, 故提供显式停止 target。
+    # 注意: taskkill /F /IM 会终止本机所有 openocd.exe 实例。
+    if(CMAKE_HOST_WIN32)
+        add_custom_target(${target}-stop
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "WCH: killing openocd.exe to release probe ..."
+            COMMAND cmd /c "taskkill /F /IM openocd.exe & exit 0"
+            VERBATIM)
+    else()
+        add_custom_target(${target}-stop
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "WCH: killing openocd to release probe ..."
+            COMMAND sh -c "pkill -f '${_cfg}' || true"
+            VERBATIM)
+    endif()
+endfunction()

@@ -1,0 +1,26 @@
+# 本文件由 ch32x035-bsp 的 add_wch_debug_target() 自动生成 —— 请勿手改
+# 芯片: @WCH_CHIP@
+# 适用探针: WCH-Link / WCH-LinkE / WCH-LinkW (RISC-V 模式)
+#
+# 说明:
+#   - 与 MRS2 官方 bin/wch-riscv.cfg 结构一致(wlinke 驱动 + sdi 传输 + wch_riscv 目标)
+#   - 仅调试(GDB server),不烧录; 烧录请用 WCH-LinkUtility / MRS2 原有方式
+#   - init + reset halt: 启动即复位并挂起目标,等待 GDB 设断点后继续执行
+#   - GDB server 端口由 add_wch_debug_target() 以命令行 -c gdb_port <n> 传入
+
+adapter driver wlinke
+adapter speed @WCH_OPENOCD_SPEED@
+transport select sdi
+
+wlink_set_address 0x00000000
+
+set _CHIPNAME wch_riscv
+sdi newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x00001
+
+set _TARGETNAME $_CHIPNAME.cpu
+
+target create $_TARGETNAME.0 wch_riscv -chain-position $_TARGETNAME
+$_TARGETNAME.0 configure -work-area-phys 0x20000000 -work-area-size 10000 -work-area-backup 1
+
+init
+reset halt
